@@ -2,16 +2,31 @@
 
 A desktop waste-sorting companion for Gator Hack V. Built with Electron, React, Node.js, and TypeScript.
 
-## Phase 1: what works today
+## Phase 2, Part 1: Gemini classification
 
-- Real webcam preview, camera selection, and single-frame JPEG capture.
-- Complete scan → classify → align → deposit → confirm workflow.
-- Clearly labeled, selectable **simulated** classifier and device adapters. These do not analyze images or move hardware.
-- Trash, paper, plastic, unknown, classifier-error, and movement-error scenarios.
-- Manual overrides, cancellation, error recovery, three-bin animation, and session history.
-- Local camera/angle settings, isolated Electron renderer, validated IPC, Windows portable build.
+Sortly supports two explicit classification modes, both with simulated bin movement:
 
-No Gemini key, Arduino, internet connection, or USB port is required to run the app after installation.
+- **Demo**: a selected, predetermined scenario; works offline without credentials.
+- **Gemini**: one captured JPEG analyzed by Google; requires credentials and internet.
+
+The webcam preview stays local. Clicking **Scan item** in Gemini mode sends one JPEG (maximum dimension 1024 pixels) to Google. Images remain in application memory and are not saved or logged locally. Session history records Demo/Gemini source and manual overrides; counts require user confirmation. Arduino, USB serial and physical movement remain for Part 2.
+
+### Configure Gemini
+
+Create an ignored `.env` beside `package.json` for development:
+
+```dotenv
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+For `release/Sortly-0.1.0-Windows.exe`, put `.env` beside that executable. Portable builds use `PORTABLE_EXECUTABLE_DIR`; unpacked builds read beside `Sortly.exe`. Credentials are never loaded from the application archive or included in the build. Inherited environment variables take precedence over `.env`; a blank model uses `gemini-3.8-flash`. Restart the app after any configuration change.
+
+Open **Setup**, choose **Gemini** under **Classification mode**, and save. Existing settings migrate to Demo while preserving the camera and angles. Gemini selection is disabled without a key. **Configured** means credentials are present, not that Google has accepted them. Model errors are shown without substituting models or switching to Demo. Setup changes are locked until the current cycle is resolved.
+
+Requests have a 15-second deadline, no automatic retries, and abort on cancellation. Gemini chooses paper, plastic or trash by dominant visible material; uncertainty defaults to trash. Demo mode retains its explicit unknown/review rehearsal scenario. API errors require an explicit fresh scan. The mechanism remains labeled simulated, and deposit confirmation appears only after simulated alignment completes. Never put keys in `VITE_` variables, HTML, React, or `.env.example`.
+
+Official references: [models](https://ai.google.dev/gemini-api/docs/models), [structured output](https://ai.google.dev/gemini-api/docs/structured-output), [image understanding](https://ai.google.dev/gemini-api/docs/image-understanding).
 
 ## Run on Windows
 
@@ -45,13 +60,13 @@ Remove-Item Env:\SORTLY_EXECUTABLE
 
 ## Demo in two minutes
 
-1. Open Sortly. The simulated device connects automatically; a persistent banner explains rehearsal mode.
+1. Open Sortly and select Demo in Setup. The simulated device connects automatically; a persistent banner explains rehearsal mode.
 2. Select **Paper sheet**, hold up an item, and click **Scan item**. The frame is real; the selected result is predetermined.
 3. Wait for the simulated paper bin to align. Deposit the item if demonstrating with a prop, then click **Done — item deposited**.
 4. Repeat with **Plastic bottle** and **Used tissue**. Open Session history to show confirmed counts.
 5. Try **Unclear item** to rescan or explicitly select a bin. Try **Movement failure** to demonstrate safe recovery.
 
-The image is held in memory only for the request and is not logged or saved. Session history is in memory and resets on app exit. Only camera ID and bin angles persist in Electron's per-user `settings.json` (normally `%APPDATA%/sortly`). Counts are user-confirmed, not sensor measurements or measured environmental impact.
+The image is held in memory only for the request and is not logged or saved. Session history is in memory and resets on app exit. Only classification mode, camera ID and bin angles persist in Electron's per-user `settings.json` (normally `%APPDATA%/sortly`). Counts are user-confirmed, not sensor measurements or measured environmental impact.
 
 ## Architecture and Phase 2 handoff
 
@@ -61,21 +76,22 @@ The image is held in memory only for the request and is not logged or saved. Ses
 
 The controller blocks concurrent cycles, refuses movement for `unknown` or invalid classifier output, rejects stale results after cancellation, requires a movement-completion promise before deposit instructions, and requires reconnection after movement failure. Classification deadline: 15 seconds. Movement deadline: 5 seconds. Settings cannot change during an active cycle.
 
-### ChatGPT's Phase 2 software work
+### Part 2 remaining software work
 
-1. Implement a Gemini `Classifier` using `@google/genai` and the existing validated `Classification` type. Read credentials in the main process. `.env.example` is a template only; **Phase 1 does not load `.env` files**. Add main-process configuration loading during integration. Never expose keys through `VITE_` variables.
-2. Implement a USB serial `BinDevice`, Arduino sketch, versioned handshake, request IDs, category-to-calibrated-angle mapping, and acknowledgement/completion messages. Resolve `moveTo` only on matching completion; reject on timeout/disconnect. Fence late serial messages by connection generation and never automatically replay movement.
-3. Add explicit live connection configuration/status and keep simulation as an explicitly selected mode. Do not silently fall back on failures.
-4. Add guarded calibration test commands and verify native serial bindings in the packaged app.
+Implement USB serial `BinDevice`, Arduino firmware, versioned handshake, request IDs, calibrated angles, and matching completion acknowledgements. Fence late messages by connection generation, reject disconnects/timeouts, never replay movement automatically, and verify native bindings in the packaged app. Add guarded calibration controls before physical testing.
 
 ### Ananya and Shravya's Phase 2 hardware work
 
-Confirm the positional servo model, power requirements, travel, clearance, and three-bin layout within 180°. Assemble the cardboard mechanism, provide a suitably rated external servo supply and common Arduino ground, flash the supplied firmware, and calibrate unloaded before mounting. The current 20° / 90° / 160° settings are placeholders, not verified movement limits. No physical commands exist in Phase 1.
+Confirm the positional servo model, power requirements, travel, clearance, and three-bin layout within 180°. Assemble the cardboard mechanism, provide a suitably rated external servo supply and common Arduino ground, flash the firmware when Part 2 supplies it, and calibrate unloaded before mounting. The current 20° / 90° / 160° settings are placeholders, not verified movement limits. No physical commands exist in this build.
 
-### Demo sorting policy
+### Material-based sorting policy
 
-Clean, dry paper/cardboard → paper. Empty rigid plastic bottles/containers → plastic. Clearly identified ordinary non-recyclable waste → trash. Glass, metal, films, batteries, electronics, ambiguous composites, and hazardous items → review. Local recycling rules vary; this is a constrained demo, not universal disposal advice.
+Gemini always chooses one of three bins based on the main visible material. Mostly paper/cardboard objects go to paper. Mostly plastic objects (including pens, wrappers, bags, toys and containers) go to plastic. Other materials and mixed/uncertain objects go to trash. Minor components do not override dominant material. With several objects, Gemini selects the largest or most central foreground object; empty or unclear images default to trash. Gemini does not request a rescan or enter the unknown review flow. API failures and malformed responses still stop movement. Demo mode retains the explicit unknown scenario for testing manual overrides.
+
+These bins demonstrate material grouping, not local recycling eligibility. Hazardous objects still need special handling rather than physical deposit.
 
 ## Out of scope
 
 Continuous detection, automatic deposit sensing, accounts, cloud hosting, full-circle rotation, custom model training, production signing/updates, and macOS/Linux packaging.
+
+See [Phase 2 verification and demonstration script](PHASE2-VERIFICATION.md) for recorded checks and the outstanding live object evaluation.

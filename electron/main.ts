@@ -1,3 +1,5 @@
+import { loadGeminiConfig } from './config';
+import { GeminiClassifier } from '../src/core/gemini';
 import { app, BrowserWindow, ipcMain, net, protocol, session } from 'electron';
 import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
@@ -76,9 +78,18 @@ app.whenReady().then(async () => {
         details.mediaTypes?.every((type) => type === 'video') === true,
     );
   });
+  const config = loadGeminiConfig(app.isPackaged, app.getPath('exe'), app.getAppPath());
   const classifier = new SimulatedClassifier();
   const device = new SimulatedDevice();
-  const controller = new SortController(classifier, device, loadSettings());
+  const controller = new SortController(
+    classifier,
+    device,
+    loadSettings(),
+    15000,
+    5000,
+    new GeminiClassifier(config.apiKey, config.model),
+    { configured: Boolean(config.apiKey), model: config.model },
+  );
   await controller.connect();
   controller.subscribe((state) => {
     if (window && !window.isDestroyed()) window.webContents.send('sortly:state', state);
@@ -98,7 +109,9 @@ app.whenReady().then(async () => {
     if (controller.snapshot().stage !== 'ready')
       throw new Error('A sorting cycle is already active.');
     classifier.scenario = controller.snapshot().scenario;
-    device.failNextMove = classifier.scenario === 'device-error';
+    device.failNextMove =
+      controller.snapshot().settings.classificationMode === 'demo' &&
+      classifier.scenario === 'device-error';
     return controller.scan(imageSchema.parse(value));
   });
   handle('configure', (value) => controller.configure(scenarioSchema.parse(value)));

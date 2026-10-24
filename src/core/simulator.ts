@@ -10,9 +10,20 @@ const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export class SimulatedClassifier implements Classifier {
   scenario: Scenario = 'paper';
   constructor(private latency = 1400) {}
-  async classify(_image: ImageInput): Promise<Classification> {
+  async classify(_image: ImageInput, signal?: AbortSignal): Promise<Classification> {
     const selected = this.scenario;
-    await delay(this.latency);
+    await new Promise<void>((resolve, reject) => {
+      const cancel = () => {
+        clearTimeout(timer);
+        reject(new Error('Scan cancelled.'));
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener('abort', cancel);
+        resolve();
+      }, this.latency);
+      if (signal?.aborted) cancel();
+      else signal?.addEventListener('abort', cancel, { once: true });
+    });
     if (selected === 'classification-error')
       throw new Error(
         'The demo classifier could not finish. Select another scenario and try again.',

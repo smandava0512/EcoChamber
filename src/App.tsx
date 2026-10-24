@@ -67,7 +67,7 @@ function SettingsPanel({
   const [draft, setDraft] = useState<Settings>(state.settings);
   const [saved, setSaved] = useState(false);
   const [validation, setValidation] = useState('');
-  const locked = ['capturing', 'identifying', 'moving', 'deposit'].includes(state.stage);
+  const locked = state.stage !== 'ready';
   const save = async () => {
     const parsed = settingsSchema.safeParse(draft);
     if (!parsed.success) {
@@ -86,9 +86,37 @@ function SettingsPanel({
         <span className="eyebrow">YOUR WORKSPACE</span>
         <h2>Camera & bin positions</h2>
         <p className="muted">
-          Settings are saved on this laptop. Angles only update the preview in Phase 1.
+          Settings are saved on this laptop. Angles only update the simulated mechanism preview.
         </p>
         <fieldset disabled={locked}>
+          <label className="field-label" htmlFor="classification-mode">
+            Classification mode
+          </label>
+          <select
+            id="classification-mode"
+            value={draft.classificationMode}
+            onChange={(event) => {
+              setDraft({
+                ...draft,
+                classificationMode: event.target.value as Settings['classificationMode'],
+              });
+              setSaved(false);
+            }}
+          >
+            <option value="demo">Demo</option>
+            <option value="gemini" disabled={!state.classifierStatus.configured}>
+              Gemini
+            </option>
+          </select>
+          <p className="muted">
+            Gemini credentials: {state.classifierStatus.configured ? 'Configured' : 'Missing'}.
+            Model: {state.classifierStatus.model}. Configured does not confirm connectivity.
+          </p>
+          <p className="tiny">
+            Set GEMINI_API_KEY in .env beside the portable executable (repository root in
+            development), then restart. Inherited environment variables take precedence. Gemini
+            sends one captured image to Google per scan.
+          </p>
           <label className="field-label" htmlFor="camera-select">
             Webcam
           </label>
@@ -163,7 +191,7 @@ function SettingsPanel({
             <FlaskConical size={22} />
           </div>
           <div>
-            <strong>Simulated device</strong>
+            <strong>Simulated mechanism</strong>
             <p>
               {state.connected
                 ? 'Connected · no physical movement'
@@ -186,15 +214,17 @@ function SettingsPanel({
           <span className="tag">PHASE 2</span>
           <h3>From pixels to physical.</h3>
           <p>
-            Gemini will identify the item. Ananya and Shravya’s Arduino mechanism will bring the
+            Gemini mode identifies the item. Ananya and Shravya’s Arduino mechanism will bring the
             correct bin into position.
           </p>
           <ul>
-            <li>Gemini API key & image classification</li>
+            <li>Gemini classification is available in Setup</li>
             <li>USB serial & Arduino firmware</li>
             <li>Servo calibration & real-world testing</li>
           </ul>
-          <p className="tiny">No API key, USB port, or powered servo is used in this build.</p>
+          <p className="tiny">
+            Movement is simulated. USB serial, firmware and physical calibration remain for Part 2.
+          </p>
         </div>
       </section>
     </div>
@@ -236,7 +266,11 @@ function Activity({ state, full = false }: { state: SortState; full?: boolean })
                 <strong>{entry.manual ? 'Manually selected item' : entry.itemName}</strong>
                 <p>
                   {labels[entry.category]}
-                  {entry.manual ? ' · Manual override' : ' · Demo result'}
+                  {entry.manual
+                    ? ' - Manual override'
+                    : entry.source === 'gemini'
+                      ? ' - Gemini result'
+                      : ' - Demo result'}
                 </p>
               </div>
               <time>
@@ -358,6 +392,7 @@ export default function App() {
         <p>{notice || 'Preparing your sorting station…'}</p>
       </div>
     );
+  const gemini = state.settings.classificationMode === 'gemini';
   const busy = ['capturing', 'identifying', 'moving', 'deposit'].includes(state.stage);
   const progress = ['ready', 'capturing', 'identifying'].includes(state.stage)
     ? 0
@@ -442,7 +477,7 @@ export default function App() {
             </span>
             <span className="demo-badge">
               <FlaskConical size={13} />
-              Demo mode
+              {gemini ? 'Gemini classification' : 'Demo mode'}
             </span>
           </div>
         </header>
@@ -470,10 +505,20 @@ export default function App() {
           <div className="demo-banner">
             <FlaskConical size={18} />
             <p>
-              <strong>You’re in the rehearsal.</strong> Classification and movement are simulated.
-              Your webcam is live.
+              {gemini ? (
+                <>
+                  <strong>Gemini classification / Simulated mechanism.</strong> Clicking Scan item
+                  sends one captured image to Google for analysis. Continuous video stays on this
+                  laptop.
+                </>
+              ) : (
+                <>
+                  <strong>Demo rehearsal.</strong> Classification and movement are simulated. Your
+                  webcam is live.
+                </>
+              )}
             </p>
-            <span>PHASE 1</span>
+            <span>PHASE 2 / PART 1</span>
           </div>
           {notice && (
             <div className="notice" role="alert">
@@ -503,7 +548,11 @@ export default function App() {
                 <div className="capture-footer">
                   <div>
                     <strong>One item. A clear view.</strong>
-                    <p>Good lighting helps when live AI arrives.</p>
+                    <p>
+                      {gemini
+                        ? 'Scan item sends one JPEG to Google. Use good lighting.'
+                        : 'Good lighting helps you rehearse a clear capture.'}
+                    </p>
                   </div>
                   <button
                     className="button primary scan-button"
@@ -565,13 +614,17 @@ export default function App() {
                       : stageText[state.stage].title}
                   </h2>
                   <p>
-                    {state.error || state.classification?.reason || stageText[state.stage].body}
+                    {state.error ||
+                      state.classification?.reason ||
+                      (gemini && state.stage === 'identifying'
+                        ? 'Google is analyzing your captured image.'
+                        : stageText[state.stage].body)}
                   </p>
                   {state.classification && (
                     <div className="identified-label">
                       {state.manual
                         ? 'Manual bin selection'
-                        : `${state.classification.itemName} · Demo result`}
+                        : `${state.classification.itemName} - ${state.source === 'gemini' ? 'Gemini result' : 'Demo result'}`}
                     </div>
                   )}
                   {state.stage === 'deposit' && (
@@ -668,28 +721,30 @@ export default function App() {
                 </div>
               </section>
             </div>
-            <div className="demo-controls">
-              <div>
-                <FlaskConical size={17} />
-                <strong>Demo scenario</strong>
-                <span>Pick the next result</span>
+            {!gemini && (
+              <div className="demo-controls">
+                <div>
+                  <FlaskConical size={17} />
+                  <strong>Demo scenario</strong>
+                  <span>Pick the next result</span>
+                </div>
+                <select
+                  aria-label="Demo scenario"
+                  disabled={busy || pending}
+                  value={state.scenario}
+                  onChange={(event) =>
+                    void run(() => window.sortly.configure(event.target.value as Scenario))
+                  }
+                >
+                  {scenarios.map((scenario) => (
+                    <option key={scenario.value} value={scenario.value}>
+                      {scenario.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="demo-control-note">Selected outcome, not image recognition</span>
               </div>
-              <select
-                aria-label="Demo scenario"
-                disabled={busy || pending}
-                value={state.scenario}
-                onChange={(event) =>
-                  void run(() => window.sortly.configure(event.target.value as Scenario))
-                }
-              >
-                {scenarios.map((scenario) => (
-                  <option key={scenario.value} value={scenario.value}>
-                    {scenario.label}
-                  </option>
-                ))}
-              </select>
-              <span className="demo-control-note">Selected outcome, not image recognition</span>
-            </div>
+            )}
             <div className="lower-grid">
               <Bins state={state} />
               <Activity state={state} />
@@ -728,7 +783,9 @@ export default function App() {
               ['Hold it up', 'Show one item clearly in the webcam preview.'],
               [
                 'Scan & align',
-                'Click Scan item. Today’s demo uses your selected scenario and a simulated bin.',
+                gemini
+                  ? 'Click Scan item to send one captured image to Google. Bin alignment is simulated.'
+                  : 'Click Scan item. Demo uses your selected scenario and a simulated bin.',
               ],
               ['Drop it in', 'Wait for the bin-ready message, deposit the item, then click Done.'],
             ].map(([title, body], index) => (
@@ -743,8 +800,9 @@ export default function App() {
             <div className="help-note">
               <ArrowDown size={18} />
               <p>
-                Paper: clean and dry. Plastic: empty rigid containers. Trash: ordinary
-                non-recyclables. Unclear or unsupported items need review.
+                Paper: mostly paper or cardboard. Plastic: mostly plastic, including pens, bags and
+                wrappers. Trash: other materials or uncertain objects. Gemini always picks one of
+                the three bins.
               </p>
             </div>
             <button className="button primary full-width" onClick={() => setHelp(false)}>

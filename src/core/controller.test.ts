@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SortController } from './controller';
 import { SimulatedClassifier, SimulatedDevice } from './simulator';
-import { defaultSettings, type BinDevice, type Classification, type Classifier } from './types';
+import {
+  settingsSchema,
+  defaultSettings,
+  type BinDevice,
+  type Classification,
+  type Classifier,
+} from './types';
 const image = { base64: '/9j/AAAA', mimeType: 'image/jpeg' as const };
 const paper: Classification = {
   category: 'paper',
@@ -194,5 +200,62 @@ describe('simulation adapters', () => {
     device.failNextMove = true;
     await expect(device.moveTo('paper')).rejects.toThrow('Position is unknown');
     expect(device.connected).toBe(false);
+  });
+});
+
+describe('Phase 2 mode and provenance', () => {
+  it('migrates legacy settings without losing camera or angles', () => {
+    const legacy = { cameraId: 'saved-camera', angles: { paper: 82, plastic: 150, trash: 12 } };
+    expect(settingsSchema.parse(legacy)).toEqual({ ...legacy, classificationMode: 'demo' });
+  });
+  it('requires credentials before selecting Gemini', () => {
+    expect(() =>
+      setup().controller.saveSettings({ ...defaultSettings, classificationMode: 'gemini' }),
+    ).toThrow('GEMINI_API_KEY');
+  });
+  it('uses Gemini independently of the demo scenario and preserves source after mode changes', async () => {
+    const { device } = setup();
+    const demo = { classify: vi.fn().mockResolvedValue(paper) };
+    const live = { classify: vi.fn().mockResolvedValue({ ...paper, category: 'unknown' }) };
+    const controller = new SortController(
+      demo,
+      device,
+      { ...defaultSettings, classificationMode: 'gemini' },
+      15000,
+      5000,
+      live,
+      { configured: true, model: 'test' },
+    );
+    await controller.connect();
+    controller.configure('device-error');
+    await controller.scan(image);
+    expect(demo.classify).not.toHaveBeenCalled();
+    expect(device.moveTo).not.toHaveBeenCalled();
+    expect(() => controller.saveSettings(defaultSettings)).toThrow('Resolve');
+    await controller.override('paper');
+    controller.done();
+    controller.saveSettings(defaultSettings);
+    expect(controller.snapshot().history[0]).toMatchObject({ source: 'gemini', manual: true });
+  });
+  it.each(['cancel', 'timeout'])('aborts on %s and ignores late results', async (kind) => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    let finish!: (value: Classification) => void;
+    const { controller, device } = setup(
+      vi.fn().mockImplementation((_image, value) => {
+        signal = value;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      }),
+    );
+    await controller.connect();
+    const scan = controller.scan(image);
+    if (kind === 'cancel') controller.reset();
+    else await vi.advanceTimersByTimeAsync(15001);
+    expect(signal?.aborted).toBe(true);
+    finish(paper);
+    await scan;
+    expect(device.moveTo).not.toHaveBeenCalled();
   });
 });

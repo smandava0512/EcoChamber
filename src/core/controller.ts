@@ -14,9 +14,11 @@ import type {
   Scenario,
   Settings,
   SortState,
+  ClassifierStatus,
 } from './types';
 export class SortController {
   private epoch = 0;
+  private request?: AbortController;
   private listeners = new Set<(state: SortState) => void>();
   private connectionBusy = false;
   private state: SortState;
@@ -26,8 +28,12 @@ export class SortController {
     settings: Settings = defaultSettings,
     private requestTimeout = 15000,
     private moveTimeout = 5000,
+    private gemini?: Classifier,
+    classifierStatus: ClassifierStatus = { configured: false, model: 'gemini-3.8-flash' },
   ) {
     this.state = {
+      classifierStatus,
+      source: settings.classificationMode,
       stage: 'ready',
       scenario: 'paper',
       connected: false,
@@ -78,8 +84,12 @@ export class SortController {
     this.patch({ scenario: scenarioSchema.parse(value) });
   }
   saveSettings(value: Settings) {
-    this.assertIdle();
-    this.patch({ settings: settingsSchema.parse(value) });
+    if (this.state.stage !== 'ready' || this.connectionBusy)
+      throw new Error('Resolve the current cycle before changing setup.');
+    const settings = settingsSchema.parse(value);
+    if (settings.classificationMode === 'gemini' && !this.state.classifierStatus.configured)
+      throw new Error('Configure GEMINI_API_KEY and restart the app first.');
+    this.patch({ settings });
   }
   async connect() {
     this.assertIdle();
@@ -109,7 +119,11 @@ export class SortController {
     if (!this.state.connected) throw new Error('Connect the simulated device first.');
     const image = imageSchema.parse(input);
     const token = ++this.epoch;
+    const request = new AbortController();
+    this.request = request;
+    const source = this.state.settings.classificationMode;
     this.patch({
+      source,
       stage: 'capturing',
       classification: null,
       target: null,
@@ -120,7 +134,14 @@ export class SortController {
       this.patch({ stage: 'identifying' });
       const result = classificationSchema.parse(
         await this.deadline(
-          this.classifier.classify(image),
+          (source === 'gemini'
+            ? this.gemini || {
+                classify: async () => {
+                  throw new Error('Gemini is not configured. Add GEMINI_API_KEY and restart.');
+                },
+              }
+            : this.classifier
+          ).classify(image, request.signal),
           this.requestTimeout,
           'Classification timed out. Try scanning again.',
         ),
@@ -134,6 +155,9 @@ export class SortController {
       await this.move(result.category, token);
     } catch (error) {
       if (token === this.epoch) this.patch({ stage: 'error', error: this.message(error) });
+    } finally {
+      request.abort();
+      if (this.request === request) this.request = undefined;
     }
   }
   async override(value: Category) {
@@ -170,6 +194,7 @@ export class SortController {
     if (this.state.stage !== 'deposit' || !this.state.target)
       throw new Error('Wait until the bin is ready.');
     const entry = {
+      source: this.state.source,
       id: crypto.randomUUID(),
       category: this.state.target,
       itemName: this.state.classification?.itemName || 'Item',
@@ -189,6 +214,7 @@ export class SortController {
     if (!['identifying', 'review', 'error'].includes(this.state.stage))
       throw new Error('This cycle cannot be reset yet.');
     ++this.epoch;
+    this.request?.abort();
     this.patch({ stage: 'ready', classification: null, target: null, manual: false, error: null });
   }
   private message(error: unknown) {

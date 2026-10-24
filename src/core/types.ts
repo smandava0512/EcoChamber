@@ -41,15 +41,17 @@ export const settingsSchema = z
       })
       .strict(),
     cameraId: z.string().max(300),
+    classificationMode: z.enum(['demo', 'gemini']).default('demo'),
   })
   .strict();
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaultSettings: Settings = {
   angles: { trash: 20, paper: 90, plastic: 160 },
   cameraId: '',
+  classificationMode: 'demo',
 };
 export interface Classifier {
-  classify(image: ImageInput): Promise<Classification>;
+  classify(image: ImageInput, signal?: AbortSignal): Promise<Classification>;
 }
 export interface BinDevice {
   connect(): Promise<void>;
@@ -64,7 +66,13 @@ export type Stage =
   | 'deposit'
   | 'review'
   | 'error';
+export type ClassificationMode = 'demo' | 'gemini';
+export interface ClassifierStatus {
+  configured: boolean;
+  model: string;
+}
 export interface HistoryEntry {
+  source: ClassificationMode;
   id: string;
   category: Category;
   itemName: string;
@@ -72,6 +80,8 @@ export interface HistoryEntry {
   at: string;
 }
 export interface SortState {
+  classifierStatus: ClassifierStatus;
+  source: ClassificationMode;
   stage: Stage;
   scenario: Scenario;
   connected: boolean;

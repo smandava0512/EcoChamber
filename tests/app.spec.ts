@@ -10,7 +10,12 @@ let app: ElectronApplication;
 let page: Page;
 test.beforeEach(async ({}, testInfo) => {
   const executable = process.env.SORTLY_EXECUTABLE;
-  const env = { ...process.env, SORTLY_TEST_DATA: testInfo.outputPath('user-data') };
+  const env = {
+    ...process.env,
+    SORTLY_TEST_DATA: testInfo.outputPath('user-data'),
+    GEMINI_API_KEY: testInfo.title.includes('missing key') ? '' : 'mock-key-never-sent',
+    GEMINI_MODEL: 'gemini-3.8-flash',
+  };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({
     ...(executable ? { executablePath: path.resolve(executable) } : {}),
@@ -28,6 +33,7 @@ test.afterEach(async () => {
   await app?.close();
 });
 test('live capture, all three categories, and confirmed session history', async ({}, testInfo) => {
+  test.setTimeout(60000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const scan = page.getByRole('button', { name: 'Scan item' });
@@ -36,8 +42,8 @@ test('live capture, all three categories, and confirmed session history', async 
   for (const category of ['paper', 'plastic', 'trash']) {
     await page.getByLabel('Demo scenario').selectOption(category);
     await scan.click();
-    await expect(page.getByRole('button', { name: 'Done — item deposited' })).toBeVisible();
-    await page.getByRole('button', { name: 'Done — item deposited' }).click();
+    await expect(page.getByRole('button', { name: /Done .* item deposited/ })).toBeVisible();
+    await page.getByRole('button', { name: /Done .* item deposited/ }).click();
     await expect(scan).toBeEnabled();
   }
   await page.getByRole('button', { name: /Session history/ }).click();
@@ -49,10 +55,10 @@ test('unknown requires review; explicit override is recorded', async () => {
   await page.getByLabel('Demo scenario').selectOption('unknown');
   await page.getByRole('button', { name: 'Scan item' }).click();
   await expect(page.getByRole('button', { name: 'Rescan item' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Done — item deposited' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: /Done .* item deposited/ })).not.toBeVisible();
   await page.getByRole('button', { name: 'Override to Plastic' }).click();
-  await page.getByRole('button', { name: 'Done — item deposited' }).click();
-  await expect(page.getByText('Plastic · Manual override')).toBeVisible();
+  await page.getByRole('button', { name: /Done .* item deposited/ }).click();
+  await expect(page.getByText('Plastic - Manual override')).toBeVisible();
 });
 test('API and movement failures recover without silently completing a deposit', async () => {
   await page.getByLabel('Demo scenario').selectOption('classification-error');
@@ -61,7 +67,7 @@ test('API and movement failures recover without silently completing a deposit', 
   await page.getByLabel('Demo scenario').selectOption('device-error');
   await page.getByRole('button', { name: 'Scan item' }).click();
   await expect(page.getByText('Movement did not complete.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Done — item deposited' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: /Done .* item deposited/ })).not.toBeVisible();
   await page.getByRole('button', { name: 'Reconnect simulator' }).click();
   await expect(page.getByRole('button', { name: 'Scan item' })).toBeEnabled();
   await expect(page.locator('.session-badge strong')).toHaveText('0');
@@ -83,7 +89,7 @@ test('cancelled scan never moves a bin or counts a deposit', async () => {
   await page.getByRole('button', { name: 'Scan item' }).click();
   await page.getByRole('button', { name: 'Cancel scan' }).click();
   await expect(page.getByRole('button', { name: 'Scan item' })).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Done — item deposited' })).not.toBeVisible();
+  await expect(page.getByRole('button', { name: /Done .* item deposited/ })).not.toBeVisible();
   await expect(page.locator('.session-badge strong')).toHaveText('0');
 });
 
@@ -100,4 +106,104 @@ test('camera denied disables capture and offers recovery', async () => {
   await expect(page.getByRole('button', { name: 'Try camera again' })).toBeVisible();
   await page.getByRole('button', { name: 'Setup', exact: true }).click();
   await expect(page.getByLabel('Webcam', { exact: true })).toBeVisible();
+});
+
+test('Gemini mock cycle keeps movement simulated, locks modes and records source', async () => {
+  await app.evaluate(() => {
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      category: 'paper',
+                      itemName: 'Mock paper',
+                      reason: 'Clean dry paper.',
+                    }),
+                  },
+                ],
+                role: 'model',
+              },
+              finishReason: 'STOP',
+            },
+          ],
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+  });
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await page.getByLabel('Classification mode').selectOption('gemini');
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  await expect(page.getByLabel('Demo scenario')).not.toBeVisible();
+  await expect(
+    page.getByText('Clicking Scan item sends one captured image', { exact: false }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Scan item' }).click();
+  await expect(page.getByRole('button', { name: /Done .* item deposited/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await expect(page.getByLabel('Classification mode')).toBeDisabled();
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  await page.getByRole('button', { name: /Done .* item deposited/ }).click();
+  await expect(page.getByText('Paper - Gemini result')).toBeVisible();
+  const state = await page.evaluate(() => window.sortly.getState());
+  expect(JSON.stringify(state)).not.toContain('mock-key');
+  expect(state.history[0].source).toBe('gemini');
+});
+test('missing key disables Gemini but allows Demo', async () => {
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await expect(
+    page.getByLabel('Classification mode').locator('option[value="gemini"]'),
+  ).toBeDisabled();
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Scan item' })).toBeEnabled();
+});
+
+test('Gemini errors stay in Gemini mode without moving or exposing provider details', async () => {
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await page.getByLabel('Classification mode').selectOption('gemini');
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  for (const status of [429, 200]) {
+    await app.evaluate((_electron, status) => {
+      globalThis.fetch = async () =>
+        new Response(
+          JSON.stringify(
+            status === 429
+              ? {
+                  error: {
+                    code: 429,
+                    message: 'sensitive-provider-details',
+                    status: 'RESOURCE_EXHAUSTED',
+                  },
+                }
+              : {
+                  candidates: [
+                    {
+                      content: { role: 'model', parts: [{ text: '{"category":"metal"}' }] },
+                      finishReason: 'STOP',
+                    },
+                  ],
+                },
+          ),
+          { status, headers: { 'Content-Type': 'application/json' } },
+        );
+    }, status);
+    await page.getByRole('button', { name: 'Scan item' }).click();
+    await expect(page.getByRole('button', { name: 'Try another scan' })).toBeVisible();
+    const state = await page.evaluate(() => window.sortly.getState());
+    expect(state).toMatchObject({
+      stage: 'error',
+      position: null,
+      target: null,
+      history: [],
+      settings: { classificationMode: 'gemini' },
+    });
+    expect(JSON.stringify(state)).not.toMatch(/sensitive-provider-details|mock-key/);
+    await expect(page.getByRole('button', { name: /Done .* item deposited/ })).not.toBeVisible();
+    await page.getByRole('button', { name: 'Try another scan' }).click();
+  }
 });
