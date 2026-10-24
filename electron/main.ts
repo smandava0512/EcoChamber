@@ -5,7 +5,8 @@ import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SortController } from '../src/core/controller';
-import { SimulatedClassifier, SimulatedDevice } from '../src/core/simulator';
+import { SimulatedClassifier } from '../src/core/simulator';
+import { AppDevice, listSerialPorts } from './device';
 import {
   defaultSettings,
   imageSchema,
@@ -80,17 +81,24 @@ app.whenReady().then(async () => {
   });
   const config = loadGeminiConfig(app.isPackaged, app.getPath('exe'), app.getAppPath());
   const classifier = new SimulatedClassifier();
-  const device = new SimulatedDevice();
-  const controller = new SortController(
+  const initialSettings = loadSettings();
+  let controller: SortController;
+  const device = new AppDevice(() =>
+    controller ? controller.snapshot().settings : initialSettings,
+  );
+  controller = new SortController(
     classifier,
     device,
-    loadSettings(),
+    initialSettings,
     15000,
     5000,
     new GeminiClassifier(config.apiKey, config.model),
     { configured: Boolean(config.apiKey), model: config.model },
   );
-  await controller.connect();
+  if (initialSettings.deviceMode === 'simulated') await controller.connect();
+  app.on('before-quit', () => {
+    void device.disconnect();
+  });
   controller.subscribe((state) => {
     if (window && !window.isDestroyed()) window.webContents.send('sortly:state', state);
   });
@@ -109,7 +117,8 @@ app.whenReady().then(async () => {
     if (controller.snapshot().stage !== 'ready')
       throw new Error('A sorting cycle is already active.');
     classifier.scenario = controller.snapshot().scenario;
-    device.failNextMove =
+    device.simulation.failNextMove =
+      controller.snapshot().settings.deviceMode === 'simulated' &&
       controller.snapshot().settings.classificationMode === 'demo' &&
       classifier.scenario === 'device-error';
     return controller.scan(imageSchema.parse(value));
@@ -120,6 +129,8 @@ app.whenReady().then(async () => {
   handle('reset', () => controller.reset());
   handle('connect', () => controller.connect());
   handle('disconnect', () => controller.disconnect());
+  handle('listPorts', () => listSerialPorts());
+  handle('testPosition', (value) => controller.testPosition(categorySchema.parse(value)));
   handle('saveSettings', (value) => {
     const settings = settingsSchema.parse(value);
     const previous = controller.snapshot().settings;

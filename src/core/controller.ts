@@ -45,6 +45,17 @@ export class SortController {
       settings: structuredClone(settings),
       history: [],
     };
+    this.device.onDisconnect?.((message) => {
+      ++this.epoch;
+      this.request?.abort();
+      this.patch({
+        connected: false,
+        position: null,
+        target: null,
+        stage: 'error',
+        error: message,
+      });
+    });
   }
   snapshot(): SortState {
     return structuredClone(this.state);
@@ -81,15 +92,34 @@ export class SortController {
   }
   configure(value: Scenario) {
     this.assertIdle();
+    if (this.state.settings.deviceMode === 'arduino' && value === 'device-error')
+      throw new Error('Movement-failure rehearsal requires the simulated mechanism.');
     this.patch({ scenario: scenarioSchema.parse(value) });
   }
   saveSettings(value: Settings) {
     if (this.state.stage !== 'ready' || this.connectionBusy)
       throw new Error('Resolve the current cycle before changing setup.');
     const settings = settingsSchema.parse(value);
+    const positionChanged =
+      JSON.stringify(settings.angles) !== JSON.stringify(this.state.settings.angles) ||
+      settings.deviceMode !== this.state.settings.deviceMode ||
+      settings.serialPort !== this.state.settings.serialPort;
+    if (
+      this.state.connected &&
+      (settings.deviceMode !== this.state.settings.deviceMode ||
+        settings.serialPort !== this.state.settings.serialPort)
+    )
+      throw new Error('Disconnect the mechanism before changing its mode or USB port.');
     if (settings.classificationMode === 'gemini' && !this.state.classifierStatus.configured)
       throw new Error('Configure GEMINI_API_KEY and restart the app first.');
-    this.patch({ settings });
+    if (positionChanged) settings.hardwareCalibrated = false;
+    this.patch({
+      settings,
+      ...(positionChanged ? { position: null } : {}),
+      ...(settings.deviceMode === 'arduino' && this.state.scenario === 'device-error'
+        ? { scenario: 'paper' as const }
+        : {}),
+    });
   }
   async connect() {
     this.assertIdle();
@@ -104,6 +134,9 @@ export class SortController {
         classification: null,
         target: null,
       });
+    } catch (error) {
+      this.patch({ connected: false, position: null, stage: 'error', error: this.message(error) });
+      throw error;
     } finally {
       this.connectionBusy = false;
     }
@@ -116,7 +149,9 @@ export class SortController {
   async scan(input: ImageInput) {
     if (this.state.stage !== 'ready' || this.connectionBusy)
       throw new Error('A sorting cycle is already active.');
-    if (!this.state.connected) throw new Error('Connect the simulated device first.');
+    if (!this.state.connected) throw new Error('Connect the mechanism first.');
+    if (this.state.settings.deviceMode === 'arduino' && !this.state.settings.hardwareCalibrated)
+      throw new Error('Test and confirm the three bin positions in Setup before sorting.');
     const image = imageSchema.parse(input);
     const token = ++this.epoch;
     const request = new AbortController();
@@ -168,7 +203,13 @@ export class SortController {
     this.patch({ manual: true });
     await this.move(category, ++this.epoch);
   }
-  private async move(category: Category, token: number) {
+  async testPosition(value: Category) {
+    if (this.state.stage !== 'ready' || this.connectionBusy || !this.state.connected)
+      throw new Error('Connect the mechanism and finish the current cycle before testing.');
+    const category = categorySchema.parse(value);
+    await this.move(category, ++this.epoch, true);
+  }
+  private async move(category: Category, token: number, calibration = false) {
     this.patch({ stage: 'moving', target: category });
     try {
       await this.deadline(
@@ -176,7 +217,12 @@ export class SortController {
         this.moveTimeout,
         'Movement timed out. Reconnect before trying again.',
       );
-      if (token === this.epoch) this.patch({ stage: 'deposit', position: category });
+      if (token === this.epoch)
+        this.patch({
+          stage: calibration ? 'ready' : 'deposit',
+          position: category,
+          ...(calibration ? { target: null } : {}),
+        });
     } catch (error) {
       if (token === this.epoch) {
         await this.device.disconnect().catch(() => {});
@@ -195,6 +241,7 @@ export class SortController {
       throw new Error('Wait until the bin is ready.');
     const entry = {
       source: this.state.source,
+      deviceMode: this.state.settings.deviceMode,
       id: crypto.randomUUID(),
       category: this.state.target,
       itemName: this.state.classification?.itemName || 'Item',

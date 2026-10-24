@@ -23,7 +23,9 @@ export default function Bins({ state }: { state: SortState }) {
           <span className="eyebrow">THE RIGHT PLACE</span>
           <h2>Three bins. One small difference.</h2>
         </div>
-        <span className="tag">SIMULATED</span>
+        <span className="tag">
+          {state.settings.deviceMode === 'arduino' ? 'ARDUINO · TIMED' : 'SIMULATED'}
+        </span>
       </div>
       <div className={'bins-stage ' + (state.stage === 'moving' ? 'is-moving' : '')}>
         <div className="rail" />
@@ -69,7 +71,11 @@ export default function Bins({ state }: { state: SortState }) {
           ? 'Rotating to the selected bin'
           : state.stage === 'deposit' && active
             ? `${labels[active]} bin is in position`
-            : 'Physical mechanism connects in Phase 2'}
+            : state.settings.deviceMode === 'arduino'
+              ? state.connected
+                ? 'Arduino connected · completion is timed, not sensor-verified'
+                : 'Arduino disconnected · reconnect in Setup'
+              : 'Simulated mechanism · select Arduino in Setup for USB movement'}
       </div>
     </section>
   );

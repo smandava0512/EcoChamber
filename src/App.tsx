@@ -23,7 +23,7 @@ import Camera from './components/Camera';
 import type { CameraHandle } from './components/Camera';
 import Bins, { BinIcon, labels } from './components/Bins';
 import { categories, settingsSchema } from './core/types';
-import type { Scenario, Settings, SortState } from './core/types';
+import type { Scenario, Settings, SortState, SerialPortInfo } from './core/types';
 
 const scenarios: { value: Scenario; label: string }[] = [
   { value: 'paper', label: 'Paper sheet' },
@@ -67,7 +67,19 @@ function SettingsPanel({
   const [draft, setDraft] = useState<Settings>(state.settings);
   const [saved, setSaved] = useState(false);
   const [validation, setValidation] = useState('');
+  const [ports, setPorts] = useState<SerialPortInfo[]>([]);
+  const refreshPorts = () =>
+    window.sortly
+      .listPorts()
+      .then(setPorts)
+      .catch(() => setValidation('Could not list USB ports. Check the connection and refresh.'));
+  useEffect(() => {
+    void refreshPorts();
+  }, []);
   const locked = state.stage !== 'ready';
+  const moving = ['capturing', 'identifying', 'moving', 'deposit'].includes(state.stage);
+  const hardware = state.settings.deviceMode === 'arduino';
+  const unsaved = JSON.stringify(draft) !== JSON.stringify(state.settings);
   const save = async () => {
     const parsed = settingsSchema.safeParse(draft);
     if (!parsed.success) {
@@ -75,7 +87,14 @@ function SettingsPanel({
       return;
     }
     await run(async () => {
+      if (
+        state.connected &&
+        (parsed.data.deviceMode !== state.settings.deviceMode ||
+          parsed.data.serialPort !== state.settings.serialPort)
+      )
+        await window.sortly.disconnect();
       await window.sortly.saveSettings(parsed.data);
+      setDraft((await window.sortly.getState()).settings);
       setValidation('');
       setSaved(true);
     });
@@ -86,7 +105,7 @@ function SettingsPanel({
         <span className="eyebrow">YOUR WORKSPACE</span>
         <h2>Camera & bin positions</h2>
         <p className="muted">
-          Settings are saved on this laptop. Angles only update the simulated mechanism preview.
+          Save bin angles before testing. In Arduino mode, Test position moves the physical device.
         </p>
         <fieldset disabled={locked}>
           <label className="field-label" htmlFor="classification-mode">
@@ -160,6 +179,7 @@ function SettingsPanel({
                           ...draft.angles,
                           [category]: event.target.value === '' ? NaN : Number(event.target.value),
                         },
+                        hardwareCalibrated: false,
                       });
                       setSaved(false);
                     }}
@@ -185,16 +205,88 @@ function SettingsPanel({
       </section>
       <section className="panel settings-panel">
         <span className="eyebrow">CONNECTIONS</span>
-        <h2>Ready for what’s next.</h2>
+        <h2>Connect your mechanism.</h2>
+        <fieldset disabled={locked}>
+          <label className="field-label" htmlFor="device-mode">
+            Mechanism mode
+          </label>
+          <select
+            id="device-mode"
+            value={draft.deviceMode}
+            onChange={(event) => {
+              setDraft({
+                ...draft,
+                deviceMode: event.target.value as Settings['deviceMode'],
+                hardwareCalibrated: false,
+              });
+              setSaved(false);
+            }}
+          >
+            <option value="simulated">Simulated mechanism</option>
+            <option value="arduino">Arduino USB</option>
+          </select>
+          {draft.deviceMode === 'arduino' && (
+            <>
+              <label className="field-label" htmlFor="serial-port">
+                USB serial port
+              </label>
+              <select
+                id="serial-port"
+                value={draft.serialPort}
+                onChange={(event) => {
+                  setDraft({ ...draft, serialPort: event.target.value, hardwareCalibrated: false });
+                  setSaved(false);
+                }}
+              >
+                {!ports.some((port) => port.path === draft.serialPort) && (
+                  <option value={draft.serialPort}>{draft.serialPort} (not detected)</option>
+                )}
+                {ports.map((port) => (
+                  <option key={port.path} value={port.path}>
+                    {port.path}
+                    {port.manufacturer ? ` — ${port.manufacturer}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button className="text-button" onClick={() => void run(refreshPorts)}>
+                Refresh USB ports
+              </button>
+              <p className="tiny">
+                Arduino Uno · Servo signal D5 · 115200 baud · Sortly firmware protocol 1
+              </p>
+              <label className="calibration-confirm">
+                <input
+                  type="checkbox"
+                  checked={draft.hardwareCalibrated}
+                  onChange={(event) => {
+                    setDraft({ ...draft, hardwareCalibrated: event.target.checked });
+                    setSaved(false);
+                  }}
+                />
+                I have tested and aligned all three bin positions.
+              </label>
+            </>
+          )}
+        </fieldset>
+        {unsaved && (
+          <p className="muted">
+            Save settings on the left to apply these changes. Switching mechanisms disconnects the
+            current device.
+          </p>
+        )}
         <div className="connection-row">
           <div className="connection-icon">
             <FlaskConical size={22} />
           </div>
           <div>
-            <strong>Simulated mechanism</strong>
+            <strong>
+              {hardware ? `Arduino · ${state.settings.serialPort}` : 'Simulated mechanism'}
+            </strong>
             <p>
               {state.connected
-                ? 'Connected · no physical movement'
+                ? hardware
+                  ? 'Connected · D5 positional servo'
+                  : 'Connected · no physical movement'
                 : 'Disconnected · reconnect to sort'}
             </p>
           </div>
@@ -202,28 +294,60 @@ function SettingsPanel({
         </div>
         <button
           className="button light"
-          disabled={locked}
+          disabled={moving || unsaved}
           onClick={() =>
             void run(() => (state.connected ? window.sortly.disconnect() : window.sortly.connect()))
           }
         >
           {state.connected ? <Unplug size={16} /> : <RotateCcw size={16} />}
-          {state.connected ? 'Disconnect simulator' : 'Reconnect simulator'}
+          {hardware
+            ? state.connected
+              ? 'Disconnect Arduino'
+              : 'Connect Arduino'
+            : state.connected
+              ? 'Disconnect simulator'
+              : 'Reconnect simulator'}
         </button>
+        {state.stage === 'error' && (
+          <button className="button light" onClick={() => void run(() => window.sortly.reset())}>
+            Reset cycle
+          </button>
+        )}
+        <div className="calibration-tests">
+          <h3>Test saved positions</h3>
+          <p className="tiny">
+            Each click selects one saved angle. Keep the mechanism clear while it moves. Tests do
+            not count as deposits.
+          </p>
+          <div className="override-buttons">
+            {categories.map((category) => (
+              <button
+                key={category}
+                disabled={locked || !state.connected || unsaved}
+                aria-label={`Test ${labels[category]} position`}
+                onClick={() => void run(() => window.sortly.testPosition(category))}
+              >
+                <BinIcon category={category} size={17} />
+                Test {labels[category]}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="phase-two">
-          <span className="tag">PHASE 2</span>
+          <span className="tag">ARDUINO INTEGRATION</span>
           <h3>From pixels to physical.</h3>
           <p>
-            Gemini mode identifies the item. Ananya and Shravya’s Arduino mechanism will bring the
-            correct bin into position.
+            Gemini identifies the item. Ananya and Shravya’s mechanism rotates to its saved bin
+            position after a valid classification.
           </p>
           <ul>
-            <li>Gemini classification is available in Setup</li>
-            <li>USB serial & Arduino firmware</li>
-            <li>Servo calibration & real-world testing</li>
+            <li>Upload firmware/sortly/sortly.ino to the Uno</li>
+            <li>Save Arduino mode and connect the USB port</li>
+            <li>Test angles, align bins, then confirm calibration</li>
           </ul>
           <p className="tiny">
-            Movement is simulated. USB serial, firmware and physical calibration remain for Part 2.
+            Arduino completion is timed, not sensor-verified. Connect does not move the servo.
+            Hardware mode requires reconnecting each time the app starts.
           </p>
         </div>
       </section>
@@ -271,6 +395,7 @@ function Activity({ state, full = false }: { state: SortState; full?: boolean })
                     : entry.source === 'gemini'
                       ? ' - Gemini result'
                       : ' - Demo result'}
+                  {entry.deviceMode === 'arduino' && ' · Arduino'}
                 </p>
               </div>
               <time>
@@ -393,6 +518,7 @@ export default function App() {
       </div>
     );
   const gemini = state.settings.classificationMode === 'gemini';
+  const hardware = state.settings.deviceMode === 'arduino';
   const busy = ['capturing', 'identifying', 'moving', 'deposit'].includes(state.stage);
   const progress = ['ready', 'capturing', 'identifying'].includes(state.stage)
     ? 0
@@ -479,6 +605,12 @@ export default function App() {
               <FlaskConical size={13} />
               {gemini ? 'Gemini classification' : 'Demo mode'}
             </span>
+            <span>
+              <i className={'status-dot ' + (!state.connected ? 'offline' : '')} />
+              {hardware
+                ? `Arduino ${state.connected ? 'connected' : 'disconnected'}`
+                : 'Simulated mechanism'}
+            </span>
           </div>
         </header>
         <div className="page-content">
@@ -507,18 +639,26 @@ export default function App() {
             <p>
               {gemini ? (
                 <>
-                  <strong>Gemini classification / Simulated mechanism.</strong> Clicking Scan item
-                  sends one captured image to Google for analysis. Continuous video stays on this
-                  laptop.
+                  <strong>
+                    Gemini classification / {hardware ? 'Arduino mechanism' : 'Simulated mechanism'}
+                    .
+                  </strong>{' '}
+                  Clicking Scan item sends one captured image to Google for analysis. Continuous
+                  video stays on this laptop.
                 </>
               ) : (
                 <>
-                  <strong>Demo rehearsal.</strong> Classification and movement are simulated. Your
-                  webcam is live.
+                  <strong>
+                    {hardware ? 'Demo classification / Arduino mechanism.' : 'Demo rehearsal.'}
+                  </strong>{' '}
+                  {hardware
+                    ? 'The selected demo outcome moves your physical prototype.'
+                    : 'Classification and movement are simulated.'}{' '}
+                  Your webcam is live.
                 </>
               )}
             </p>
-            <span>PHASE 2 / PART 1</span>
+            <span>PHASE 2{hardware ? ' / ARDUINO' : ''}</span>
           </div>
           {notice && (
             <div className="notice" role="alert">
@@ -557,7 +697,11 @@ export default function App() {
                   <button
                     className="button primary scan-button"
                     disabled={
-                      !cameraReady || !state.connected || state.stage !== 'ready' || pending
+                      !cameraReady ||
+                      !state.connected ||
+                      state.stage !== 'ready' ||
+                      pending ||
+                      (hardware && !state.settings.hardwareCalibrated)
                     }
                     onClick={() => void scan()}
                   >
@@ -599,7 +743,9 @@ export default function App() {
                   </div>
                   <span className="eyebrow">
                     {state.stage === 'deposit'
-                      ? 'BIN IN POSITION · SIMULATED'
+                      ? hardware
+                        ? 'BIN COMMAND COMPLETE · ARDUINO'
+                        : 'BIN IN POSITION · SIMULATED'
                       : state.stage === 'moving'
                         ? 'PLEASE WAIT'
                         : state.stage === 'review'
@@ -616,9 +762,13 @@ export default function App() {
                   <p>
                     {state.error ||
                       state.classification?.reason ||
-                      (gemini && state.stage === 'identifying'
-                        ? 'Google is analyzing your captured image.'
-                        : stageText[state.stage].body)}
+                      (hardware && state.stage === 'ready' && !state.settings.hardwareCalibrated
+                        ? 'Test and confirm the three physical bin positions in Setup before sorting.'
+                        : hardware && state.stage === 'moving'
+                          ? 'Arduino is executing the saved position command. Wait for completion.'
+                          : gemini && state.stage === 'identifying'
+                            ? 'Google is analyzing your captured image.'
+                            : stageText[state.stage].body)}
                   </p>
                   {state.classification && (
                     <div className="identified-label">
@@ -674,7 +824,11 @@ export default function App() {
                       }
                     >
                       <RotateCcw size={17} />
-                      {state.connected ? 'Try another scan' : 'Reconnect simulator'}
+                      {state.connected
+                        ? 'Try another scan'
+                        : hardware
+                          ? 'Reconnect Arduino'
+                          : 'Reconnect simulator'}
                     </button>
                   )}
                   {!state.connected && state.stage === 'ready' && (
@@ -684,9 +838,17 @@ export default function App() {
                       onClick={() => void run(() => window.sortly.connect())}
                     >
                       <RotateCcw size={17} />
-                      Connect simulator
+                      {hardware ? 'Connect Arduino' : 'Connect simulator'}
                     </button>
                   )}
+                  {hardware &&
+                    state.stage === 'ready' &&
+                    state.connected &&
+                    !state.settings.hardwareCalibrated && (
+                      <button className="button light full-width" onClick={() => setTab('setup')}>
+                        Calibrate positions
+                      </button>
+                    )}
                   {state.stage === 'identifying' && (
                     <button
                       className="text-button"
@@ -737,7 +899,11 @@ export default function App() {
                   }
                 >
                   {scenarios.map((scenario) => (
-                    <option key={scenario.value} value={scenario.value}>
+                    <option
+                      key={scenario.value}
+                      value={scenario.value}
+                      disabled={hardware && scenario.value === 'device-error'}
+                    >
                       {scenario.label}
                     </option>
                   ))}
@@ -784,8 +950,8 @@ export default function App() {
               [
                 'Scan & align',
                 gemini
-                  ? 'Click Scan item to send one captured image to Google. Bin alignment is simulated.'
-                  : 'Click Scan item. Demo uses your selected scenario and a simulated bin.',
+                  ? `Click Scan item to send one captured image to Google. ${hardware ? 'The Arduino selects the physical bin.' : 'Bin alignment is simulated.'}`
+                  : `Click Scan item. Demo uses your selected scenario ${hardware ? 'to move the physical Arduino mechanism.' : 'and a simulated bin.'}`,
               ],
               ['Drop it in', 'Wait for the bin-ready message, deposit the item, then click Done.'],
             ].map(([title, body], index) => (

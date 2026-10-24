@@ -42,6 +42,12 @@ export const settingsSchema = z
       .strict(),
     cameraId: z.string().max(300),
     classificationMode: z.enum(['demo', 'gemini']).default('demo'),
+    deviceMode: z.enum(['simulated', 'arduino']).default('simulated'),
+    serialPort: z
+      .string()
+      .regex(/^COM[1-9]\d{0,3}$/i)
+      .default('COM5'),
+    hardwareCalibrated: z.boolean().default(false),
   })
   .strict();
 export type Settings = z.infer<typeof settingsSchema>;
@@ -49,6 +55,9 @@ export const defaultSettings: Settings = {
   angles: { trash: 20, paper: 90, plastic: 160 },
   cameraId: '',
   classificationMode: 'demo',
+  deviceMode: 'simulated',
+  serialPort: 'COM5',
+  hardwareCalibrated: false,
 };
 export interface Classifier {
   classify(image: ImageInput, signal?: AbortSignal): Promise<Classification>;
@@ -57,6 +66,12 @@ export interface BinDevice {
   connect(): Promise<void>;
   moveTo(category: Category): Promise<void>;
   disconnect(): Promise<void>;
+  onDisconnect?(listener: (message: string) => void): () => void;
+}
+export interface SerialPortInfo {
+  path: string;
+  manufacturer?: string;
+  serialNumber?: string;
 }
 export type Stage =
   | 'ready'
@@ -78,6 +93,7 @@ export interface HistoryEntry {
   itemName: string;
   manual: boolean;
   at: string;
+  deviceMode: Settings['deviceMode'];
 }
 export interface SortState {
   classifierStatus: ClassifierStatus;
@@ -103,5 +119,7 @@ export interface SortlyBridge {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   saveSettings(settings: Settings): Promise<void>;
+  listPorts(): Promise<SerialPortInfo[]>;
+  testPosition(category: Category): Promise<void>;
   onState(listener: (state: SortState) => void): () => void;
 }

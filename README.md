@@ -2,14 +2,14 @@
 
 A desktop waste-sorting companion for Gator Hack V. Built with Electron, React, Node.js, and TypeScript.
 
-## Phase 2, Part 1: Gemini classification
+## Phase 2: Gemini classification and Arduino integration
 
-Sortly supports two explicit classification modes, both with simulated bin movement:
+Sortly supports two independent classification modes and a choice of simulated or Arduino USB bin movement:
 
 - **Demo**: a selected, predetermined scenario; works offline without credentials.
 - **Gemini**: one captured JPEG analyzed by Google; requires credentials and internet.
 
-The webcam preview stays local. Clicking **Scan item** in Gemini mode sends one JPEG (maximum dimension 1024 pixels) to Google. Images remain in application memory and are not saved or logged locally. Session history records Demo/Gemini source and manual overrides; counts require user confirmation. Arduino, USB serial and physical movement remain for Part 2.
+The webcam preview stays local. Clicking **Scan item** in Gemini mode sends one JPEG (maximum dimension 1024 pixels) to Google. Images remain in application memory and are not saved or logged locally. Session history records Demo/Gemini source and manual overrides; counts require user confirmation. Arduino USB control is available in Setup. See [Arduino setup and calibration](ARDUINO-SETUP.md).
 
 ### Configure Gemini
 
@@ -20,11 +20,11 @@ GEMINI_API_KEY=your_key_here
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-For `release/Sortly-0.1.0-Windows.exe`, put `.env` beside that executable. Portable builds use `PORTABLE_EXECUTABLE_DIR`; unpacked builds read beside `Sortly.exe`. Credentials are never loaded from the application archive or included in the build. Inherited environment variables take precedence over `.env`; a blank model uses `gemini-3.8-flash`. Restart the app after any configuration change.
+For `release/Sortly-0.2.0-Windows.exe`, put `.env` beside that executable. Portable builds use `PORTABLE_EXECUTABLE_DIR`; unpacked builds read beside `Sortly.exe`. Credentials are never loaded from the application archive or included in the build. Inherited environment variables take precedence over `.env`; a blank model uses `gemini-3.8-flash`. Restart the app after any configuration change.
 
 Open **Setup**, choose **Gemini** under **Classification mode**, and save. Existing settings migrate to Demo while preserving the camera and angles. Gemini selection is disabled without a key. **Configured** means credentials are present, not that Google has accepted them. Model errors are shown without substituting models or switching to Demo. Setup changes are locked until the current cycle is resolved.
 
-Requests have a 15-second deadline, no automatic retries, and abort on cancellation. Gemini chooses paper, plastic or trash by dominant visible material; uncertainty defaults to trash. Demo mode retains its explicit unknown/review rehearsal scenario. API errors require an explicit fresh scan. The mechanism remains labeled simulated, and deposit confirmation appears only after simulated alignment completes. Never put keys in `VITE_` variables, HTML, React, or `.env.example`.
+Requests have a 15-second deadline, no automatic retries, and abort on cancellation. Gemini chooses paper, plastic or trash by dominant visible material; uncertainty defaults to trash. Demo mode retains its explicit unknown/review rehearsal scenario. API errors require an explicit fresh scan. The UI labels the selected mechanism independently. Deposit confirmation appears only after its movement command completes; Arduino completion is timed, not sensor-verified. Never put keys in `VITE_` variables, HTML, React, or `.env.example`.
 
 Official references: [models](https://ai.google.dev/gemini-api/docs/models), [structured output](https://ai.google.dev/gemini-api/docs/structured-output), [image understanding](https://ai.google.dev/gemini-api/docs/image-understanding).
 
@@ -48,7 +48,7 @@ npm run test:e2e
 npm run dist:win
 ```
 
-`dist:win` produces `release/Sortly-0.1.0-Windows.exe` and the unpacked app. This hackathon executable is unsigned. `npm run start` launches a previously built app; `npm run build` creates it. `npm run pack:win` builds only the unpacked app. Downloads of npm packages and Electron require network access during setup/build.
+`dist:win` produces `release/Sortly-0.2.0-Windows.exe` and the unpacked app. This hackathon executable is unsigned. `npm run start` launches a previously built app; `npm run build` creates it. `npm run pack:win` builds only the unpacked app. Downloads of npm packages and Electron require network access during setup/build.
 
 The Playwright tests launch real Electron with Chromium's fake video device; no separate browser download or physical webcam is needed. To test the packaged app:
 
@@ -66,7 +66,7 @@ Remove-Item Env:\SORTLY_EXECUTABLE
 4. Repeat with **Plastic bottle** and **Used tissue**. Open Session history to show confirmed counts.
 5. Try **Unclear item** to rescan or explicitly select a bin. Try **Movement failure** to demonstrate safe recovery.
 
-The image is held in memory only for the request and is not logged or saved. Session history is in memory and resets on app exit. Only classification mode, camera ID and bin angles persist in Electron's per-user `settings.json` (normally `%APPDATA%/sortly`). Counts are user-confirmed, not sensor measurements or measured environmental impact.
+The image is held in memory only for the request and is not logged or saved. Session history is in memory and resets on app exit. Classification mode, camera ID, bin angles, mechanism mode, USB port and calibration confirmation persist in Electron's per-user `settings.json` (normally `%APPDATA%/sortly`). Counts are user-confirmed, not sensor measurements or measured environmental impact.
 
 ## Architecture and Phase 2 handoff
 
@@ -76,13 +76,13 @@ The image is held in memory only for the request and is not logged or saved. Ses
 
 The controller blocks concurrent cycles, refuses movement for `unknown` or invalid classifier output, rejects stale results after cancellation, requires a movement-completion promise before deposit instructions, and requires reconnection after movement failure. Classification deadline: 15 seconds. Movement deadline: 5 seconds. Settings cannot change during an active cycle.
 
-### Part 2 remaining software work
+### Arduino USB integration
 
-Implement USB serial `BinDevice`, Arduino firmware, versioned handshake, request IDs, calibrated angles, and matching completion acknowledgements. Fence late messages by connection generation, reject disconnects/timeouts, never replay movement automatically, and verify native bindings in the packaged app. Add guarded calibration controls before physical testing.
+The Uno on COM5 uses servo signal pin D5 and the command-based firmware in `firmware/sortly/sortly.ino`. The original ELEGOO sweep sketch is preserved separately. Firmware has been compiled and uploaded; no physical bin angles have been calibrated.
 
-### Ananya and Shravya's Phase 2 hardware work
+In **Setup**, select **Arduino USB** and **COM5**, save, then connect. Adjust and save angles, use the individual **Test position** buttons, and confirm all three positions before scanning. Changing angles, device mode, or port clears calibration confirmation. The app starts hardware mode disconnected and never automatically replays a move after failure. The simulator remains available for offline demonstrations.
 
-Confirm the positional servo model, power requirements, travel, clearance, and three-bin layout within 180°. Assemble the cardboard mechanism, provide a suitably rated external servo supply and common Arduino ground, flash the firmware when Part 2 supplies it, and calibrate unloaded before mounting. The current 20° / 90° / 160° settings are placeholders, not verified movement limits. No physical commands exist in this build.
+Read [ARDUINO-SETUP.md](ARDUINO-SETUP.md) for wiring, firmware upload, the versioned JSON protocol, recovery, and the real-device handshake test. Ananya and Shravya must align the three openings and verify clearance and power before a physical sorting demonstration. The initial 20° / 90° / 160° values are placeholders.
 
 ### Material-based sorting policy
 

@@ -10,6 +10,8 @@ const bridge: SortlyBridge = {
   connect: () => ipcRenderer.invoke('sortly:connect'),
   disconnect: () => ipcRenderer.invoke('sortly:disconnect'),
   saveSettings: (settings) => ipcRenderer.invoke('sortly:saveSettings', settings),
+  listPorts: () => ipcRenderer.invoke('sortly:listPorts'),
+  testPosition: (category) => ipcRenderer.invoke('sortly:testPosition', category),
   onState: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, state: SortState) => listener(state);
     ipcRenderer.on('sortly:state', handler);

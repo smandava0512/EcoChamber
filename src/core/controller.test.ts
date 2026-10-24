@@ -206,7 +206,7 @@ describe('simulation adapters', () => {
 describe('Phase 2 mode and provenance', () => {
   it('migrates legacy settings without losing camera or angles', () => {
     const legacy = { cameraId: 'saved-camera', angles: { paper: 82, plastic: 150, trash: 12 } };
-    expect(settingsSchema.parse(legacy)).toEqual({ ...legacy, classificationMode: 'demo' });
+    expect(settingsSchema.parse(legacy)).toEqual({ ...defaultSettings, ...legacy });
   });
   it('requires credentials before selecting Gemini', () => {
     expect(() =>
@@ -257,5 +257,111 @@ describe('Phase 2 mode and provenance', () => {
     finish(paper);
     await scan;
     expect(device.moveTo).not.toHaveBeenCalled();
+  });
+});
+
+describe('Arduino calibration and connection state', () => {
+  it('requires calibration for sorting but allows explicit position tests without deposits', async () => {
+    const { device } = setup();
+    const classify = vi.fn().mockResolvedValue(paper);
+    const controller = new SortController({ classify }, device, {
+      ...defaultSettings,
+      deviceMode: 'arduino',
+    });
+    await controller.connect();
+    await expect(controller.scan(image)).rejects.toThrow('Test and confirm');
+    expect(classify).not.toHaveBeenCalled();
+    await controller.testPosition('paper');
+    expect(device.moveTo).toHaveBeenCalledWith('paper');
+    expect(controller.snapshot()).toMatchObject({
+      stage: 'ready',
+      position: 'paper',
+      target: null,
+      history: [],
+    });
+    controller.saveSettings({
+      ...defaultSettings,
+      deviceMode: 'arduino',
+      hardwareCalibrated: true,
+    });
+    await controller.scan(image);
+    controller.done();
+    expect(controller.snapshot().history[0]).toMatchObject({ deviceMode: 'arduino' });
+  });
+  it('requires disconnect before switching mode or port', async () => {
+    const { controller } = setup();
+    await controller.connect();
+    expect(() => controller.saveSettings({ ...defaultSettings, deviceMode: 'arduino' })).toThrow(
+      'Disconnect',
+    );
+    expect(() => controller.saveSettings({ ...defaultSettings, serialPort: 'COM6' })).toThrow(
+      'Disconnect',
+    );
+    await controller.disconnect();
+    controller.saveSettings({ ...defaultSettings, deviceMode: 'arduino' });
+    expect(controller.snapshot().connected).toBe(false);
+  });
+  it('invalidates an in-flight classification on USB loss', async () => {
+    const { device } = setup();
+    let unplug!: (message: string) => void;
+    let finish!: (classification: Classification) => void;
+    device.onDisconnect = (listener) => {
+      unplug = listener;
+      return () => {};
+    };
+    const controller = new SortController(
+      {
+        classify: () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      },
+      device,
+    );
+    await controller.connect();
+    const scan = controller.scan(image);
+    unplug('USB disconnected');
+    finish(paper);
+    await scan;
+    expect(controller.snapshot()).toMatchObject({
+      stage: 'error',
+      connected: false,
+      position: null,
+      history: [],
+    });
+    expect(device.moveTo).not.toHaveBeenCalled();
+  });
+  it('reports connect failure without leaving the app busy', async () => {
+    const { controller, device } = setup();
+    vi.mocked(device.connect).mockRejectedValueOnce(new Error('Wrong firmware'));
+    await expect(controller.connect()).rejects.toThrow('Wrong firmware');
+    expect(controller.snapshot()).toMatchObject({ stage: 'error', connected: false });
+    await controller.connect();
+    expect(controller.snapshot().stage).toBe('ready');
+  });
+});
+
+describe('hardware calibration invalidation', () => {
+  it('clears confirmation and position when angles change, and disables simulator-only failures', async () => {
+    const { device } = setup();
+    const controller = new SortController({ classify: vi.fn().mockResolvedValue(paper) }, device, {
+      ...defaultSettings,
+      deviceMode: 'arduino',
+      hardwareCalibrated: true,
+    });
+    await controller.connect();
+    await controller.testPosition('paper');
+    controller.saveSettings({
+      ...defaultSettings,
+      deviceMode: 'arduino',
+      hardwareCalibrated: true,
+      angles: { ...defaultSettings.angles, paper: 85 },
+    });
+    expect(controller.snapshot()).toMatchObject({
+      position: null,
+      settings: { hardwareCalibrated: false },
+    });
+    await expect(controller.scan(image)).rejects.toThrow('Test and confirm');
+    expect(() => controller.configure('device-error')).toThrow('simulated mechanism');
   });
 });

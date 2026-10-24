@@ -207,3 +207,41 @@ test('Gemini errors stay in Gemini mode without moving or exposing provider deta
     await page.getByRole('button', { name: 'Try another scan' }).click();
   }
 });
+
+test('hardware mode requires explicit connection and calibration', async () => {
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await page.getByLabel('Mechanism mode', { exact: true }).selectOption('arduino');
+  await expect(page.getByLabel('USB serial port')).toHaveValue('COM5');
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await expect(page.getByRole('button', { name: 'Connect Arduino', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Test Paper position' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Scan item' })).toBeDisabled();
+  await expect(
+    page.getByText('The selected demo outcome moves your physical prototype.', { exact: false }),
+  ).toBeVisible();
+});
+
+test('position tests are not counted as deposits', async () => {
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await page.getByRole('button', { name: 'Test Paper position' }).click();
+  await expect(page.getByRole('button', { name: 'Test Paper position' })).toBeEnabled();
+  await expect(page.locator('.session-badge strong')).toHaveText('0');
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  await expect(page.getByRole('button', { name: /Done .* item deposited/ })).not.toBeVisible();
+});
+
+test('real COM5 handshake sends no movement commands', async ({}, testInfo) => {
+  test.skip(process.env.SORTLY_HARDWARE_TEST !== '1', 'Explicit hardware opt-in required');
+  await page.getByRole('button', { name: 'Setup', exact: true }).click();
+  await page.getByLabel('Mechanism mode', { exact: true }).selectOption('arduino');
+  await page.getByRole('button', { name: 'Save settings' }).click();
+  await page.getByRole('button', { name: 'Connect Arduino', exact: true }).click();
+  await expect(page.getByText('Connected · D5 positional servo', { exact: true })).toBeVisible({
+    timeout: 12000,
+  });
+  await page.getByRole('button', { name: 'Sort station', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Calibrate positions' })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('arduino-station.png'), fullPage: true });
+  await expect(page.getByRole('button', { name: 'Scan item' })).toBeDisabled();
+});
