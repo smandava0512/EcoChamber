@@ -109,7 +109,7 @@ export interface SortState {
   settings: Settings;
   history: HistoryEntry[];
 }
-export interface SortlyBridge {
+export interface EcoChamberBridge {
   getState(): Promise<SortState>;
   scan(image: ImageInput): Promise<void>;
   configure(scenario: Scenario): Promise<void>;

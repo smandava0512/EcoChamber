@@ -9,10 +9,10 @@ import path from 'node:path';
 let app: ElectronApplication;
 let page: Page;
 test.beforeEach(async ({}, testInfo) => {
-  const executable = process.env.SORTLY_EXECUTABLE;
+  const executable = process.env.ECOCHAMBER_EXECUTABLE;
   const env = {
     ...process.env,
-    SORTLY_TEST_DATA: testInfo.outputPath('user-data'),
+    ECOCHAMBER_TEST_DATA: testInfo.outputPath('user-data'),
     GEMINI_API_KEY: testInfo.title.includes('missing key') ? '' : 'mock-key-never-sent',
     GEMINI_MODEL: 'gemini-3.8-flash',
   };
@@ -149,7 +149,7 @@ test('Gemini mock cycle keeps movement simulated, locks modes and records source
   await page.getByRole('button', { name: 'Sort station', exact: true }).click();
   await page.getByRole('button', { name: /Done .* item deposited/ }).click();
   await expect(page.getByText('Paper - Gemini result')).toBeVisible();
-  const state = await page.evaluate(() => window.sortly.getState());
+  const state = await page.evaluate(() => window.ecochamber.getState());
   expect(JSON.stringify(state)).not.toContain('mock-key');
   expect(state.history[0].source).toBe('gemini');
 });
@@ -194,7 +194,7 @@ test('Gemini errors stay in Gemini mode without moving or exposing provider deta
     }, status);
     await page.getByRole('button', { name: 'Scan item' }).click();
     await expect(page.getByRole('button', { name: 'Try another scan' })).toBeVisible();
-    const state = await page.evaluate(() => window.sortly.getState());
+    const state = await page.evaluate(() => window.ecochamber.getState());
     expect(state).toMatchObject({
       stage: 'error',
       position: null,
@@ -232,7 +232,7 @@ test('position tests are not counted as deposits', async () => {
 });
 
 test('real COM5 handshake sends no movement commands', async ({}, testInfo) => {
-  test.skip(process.env.SORTLY_HARDWARE_TEST !== '1', 'Explicit hardware opt-in required');
+  test.skip(process.env.ECOCHAMBER_HARDWARE_TEST !== '1', 'Explicit hardware opt-in required');
   await page.getByRole('button', { name: 'Setup', exact: true }).click();
   await page.getByLabel('Mechanism mode', { exact: true }).selectOption('arduino');
   await page.getByRole('button', { name: 'Save settings' }).click();

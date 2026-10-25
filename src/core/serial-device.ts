@@ -115,7 +115,7 @@ export class SerialBinDevice implements BinDevice {
           () =>
             this.fail(
               kind === 'hello'
-                ? 'No compatible Sortly firmware replied. Upload firmware/sortly/sortly.ino, then reconnect.'
+                ? 'No compatible EcoChamber firmware replied. Upload firmware/ecochamber/ecochamber.ino, then reconnect.'
                 : 'Arduino movement timed out. Position is unknown; reconnect before retrying.',
             ),
           timeout,
@@ -165,7 +165,7 @@ export class SerialBinDevice implements BinDevice {
         );
       } else if (pending.kind === 'hello') {
         if (!readySchema.safeParse(raw).success)
-          this.fail('Firmware handshake does not match Sortly protocol 1 on servo pin D5.');
+          this.fail('Firmware handshake does not match EcoChamber protocol 1 on servo pin D5.');
         else this.finish();
       } else if (message.type === 'ack') {
         pending.acknowledged = true;

@@ -41,7 +41,7 @@ if (!ready) {
   process.exit(1);
 }
 const electronPath = require('electron');
-const electronEnv = { ...process.env, SORTLY_DEV: '1' };
+const electronEnv = { ...process.env, ECOCHAMBER_DEV: '1' };
 delete electronEnv.ELECTRON_RUN_AS_NODE;
 const electron = spawn(electronPath, ['.'], { stdio: 'inherit', env: electronEnv });
 children.push(electron);

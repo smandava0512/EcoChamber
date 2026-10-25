@@ -1,6 +1,6 @@
-import type { SortlyBridge } from './core/types';
+import type { EcoChamberBridge } from './core/types';
 declare global {
   interface Window {
-    sortly: SortlyBridge;
+    ecochamber: EcoChamberBridge;
   }
 }

@@ -12,7 +12,7 @@
 
 ## Automated coverage
 
-Routine tests use mocked responses and never call Google. Adapter tests cover supported categories, unknown, invalid JSON/schema, extra fields, empty/blocked responses, error sanitization, request options, and inline JPEG routing. Controller tests cover settings migration, mode guards, source provenance, cancellation signals, late results, timeouts, duplicate scans, review and manual override. Electron tests cover the full Demo flow, Gemini with mocked main-process fetch, missing credentials, setup locking and IPC state redaction. The same suite can target the unpacked executable via SORTLY_EXECUTABLE.
+Routine tests use mocked responses and never call Google. Adapter tests cover supported categories, unknown, invalid JSON/schema, extra fields, empty/blocked responses, error sanitization, request options, and inline JPEG routing. Controller tests cover settings migration, mode guards, source provenance, cancellation signals, late results, timeouts, duplicate scans, review and manual override. Electron tests cover the full Demo flow, Gemini with mocked main-process fetch, missing credentials, setup locking and IPC state redaction. The same suite can target the unpacked executable via ECOCHAMBER_EXECUTABLE.
 
 ## Live evaluation: outstanding
 

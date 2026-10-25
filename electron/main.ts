@@ -22,15 +22,17 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
   },
 ]);
-const dev = !app.isPackaged && process.env.SORTLY_DEV === '1';
-if (process.env.SORTLY_TEST_DATA) app.setPath('userData', process.env.SORTLY_TEST_DATA);
+const dev = !app.isPackaged && process.env.ECOCHAMBER_DEV === '1';
+// Preserve existing camera, mode and calibrated bin settings after the rename.
+app.setPath('userData', path.join(app.getPath('appData'), 'sortly'));
+if (process.env.ECOCHAMBER_TEST_DATA) app.setPath('userData', process.env.ECOCHAMBER_TEST_DATA);
 let window: BrowserWindow | null = null;
 function isOwnPage(url: string) {
   try {
     const parsed = new URL(url);
     return dev
       ? parsed.origin === 'http://127.0.0.1:5173'
-      : parsed.protocol === 'app:' && parsed.hostname === 'sortly';
+      : parsed.protocol === 'app:' && parsed.hostname === 'ecochamber';
   } catch {
     return false;
   }
@@ -59,7 +61,7 @@ app.whenReady().then(async () => {
       root,
       '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname),
     );
-    if (url.hostname !== 'sortly' || !file.startsWith(root + path.sep))
+    if (url.hostname !== 'ecochamber' || !file.startsWith(root + path.sep))
       return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).toString());
   });
@@ -100,10 +102,10 @@ app.whenReady().then(async () => {
     void device.disconnect();
   });
   controller.subscribe((state) => {
-    if (window && !window.isDestroyed()) window.webContents.send('sortly:state', state);
+    if (window && !window.isDestroyed()) window.webContents.send('ecochamber:state', state);
   });
   const handle = (name: string, fn: (value: unknown) => unknown) =>
-    ipcMain.handle('sortly:' + name, (event, value: unknown) => {
+    ipcMain.handle('ecochamber:' + name, (event, value: unknown) => {
       if (
         event.sender !== window?.webContents ||
         event.senderFrame !== window?.webContents.mainFrame ||
@@ -149,7 +151,7 @@ app.whenReady().then(async () => {
       minWidth: 980,
       minHeight: 740,
       backgroundColor: '#f5f5ef',
-      title: 'Sortly',
+      title: 'EcoChamber',
       autoHideMenuBar: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
@@ -166,7 +168,7 @@ app.whenReady().then(async () => {
       window = null;
     });
     if (dev) void window.loadURL('http://127.0.0.1:5173');
-    else void window.loadURL('app://sortly/index.html');
+    else void window.loadURL('app://ecochamber/index.html');
   }
   createWindow();
   app.on('activate', () => {

@@ -69,7 +69,7 @@ function SettingsPanel({
   const [validation, setValidation] = useState('');
   const [ports, setPorts] = useState<SerialPortInfo[]>([]);
   const refreshPorts = () =>
-    window.sortly
+    window.ecochamber
       .listPorts()
       .then(setPorts)
       .catch(() => setValidation('Could not list USB ports. Check the connection and refresh.'));
@@ -92,9 +92,9 @@ function SettingsPanel({
         (parsed.data.deviceMode !== state.settings.deviceMode ||
           parsed.data.serialPort !== state.settings.serialPort)
       )
-        await window.sortly.disconnect();
-      await window.sortly.saveSettings(parsed.data);
-      setDraft((await window.sortly.getState()).settings);
+        await window.ecochamber.disconnect();
+      await window.ecochamber.saveSettings(parsed.data);
+      setDraft((await window.ecochamber.getState()).settings);
       setValidation('');
       setSaved(true);
     });
@@ -252,7 +252,7 @@ function SettingsPanel({
                 Refresh USB ports
               </button>
               <p className="tiny">
-                Arduino Uno · Servo signal D5 · 115200 baud · Sortly firmware protocol 1
+                Arduino Uno · Servo signal D5 · 115200 baud · EcoChamber firmware protocol 1
               </p>
               <label className="calibration-confirm">
                 <input
@@ -296,7 +296,9 @@ function SettingsPanel({
           className="button light"
           disabled={moving || unsaved}
           onClick={() =>
-            void run(() => (state.connected ? window.sortly.disconnect() : window.sortly.connect()))
+            void run(() =>
+              state.connected ? window.ecochamber.disconnect() : window.ecochamber.connect(),
+            )
           }
         >
           {state.connected ? <Unplug size={16} /> : <RotateCcw size={16} />}
@@ -309,7 +311,10 @@ function SettingsPanel({
               : 'Reconnect simulator'}
         </button>
         {state.stage === 'error' && (
-          <button className="button light" onClick={() => void run(() => window.sortly.reset())}>
+          <button
+            className="button light"
+            onClick={() => void run(() => window.ecochamber.reset())}
+          >
             Reset cycle
           </button>
         )}
@@ -325,7 +330,7 @@ function SettingsPanel({
                 key={category}
                 disabled={locked || !state.connected || unsaved}
                 aria-label={`Test ${labels[category]} position`}
-                onClick={() => void run(() => window.sortly.testPosition(category))}
+                onClick={() => void run(() => window.ecochamber.testPosition(category))}
               >
                 <BinIcon category={category} size={17} />
                 Test {labels[category]}
@@ -341,7 +346,7 @@ function SettingsPanel({
             position after a valid classification.
           </p>
           <ul>
-            <li>Upload firmware/sortly/sortly.ino to the Uno</li>
+            <li>Upload firmware/ecochamber/ecochamber.ino to the Uno</li>
             <li>Save Arduino mode and connect the USB port</li>
             <li>Test angles, align bins, then confirm calibration</li>
           </ul>
@@ -458,20 +463,20 @@ export default function App() {
     };
   }, [help]);
   useEffect(() => {
-    if (!window.sortly) {
-      setNotice('Open Sortly in the Electron desktop app using npm run dev.');
+    if (!window.ecochamber) {
+      setNotice('Open EcoChamber in the Electron desktop app using npm run dev.');
       return;
     }
     let active = true;
-    const unsubscribe = window.sortly.onState((next) => {
+    const unsubscribe = window.ecochamber.onState((next) => {
       if (active) setState(next);
     });
-    void window.sortly
+    void window.ecochamber
       .getState()
       .then((next) => {
         if (active) setState(next);
       })
-      .catch(() => setNotice('Could not load the app. Close and reopen Sortly.'));
+      .catch(() => setNotice('Could not load the app. Close and reopen EcoChamber.'));
     return () => {
       active = false;
       unsubscribe();
@@ -505,14 +510,14 @@ export default function App() {
     run(async () => {
       if (!camera.current) throw new Error('The camera is not ready.');
       const image = camera.current.capture();
-      await window.sortly.scan(image);
+      await window.ecochamber.scan(image);
     });
   if (!state)
     return (
       <div className="boot">
         <Leaf size={42} />
         <h1>
-          sortly<span>.</span>
+          EcoChamber<span>.</span>
         </h1>
         <p>{notice || 'Preparing your sorting station…'}</p>
       </div>
@@ -548,7 +553,7 @@ export default function App() {
           <span className="brand-mark">
             <Leaf size={24} strokeWidth={2} />
           </span>
-          sortly<span className="brand-dot">.</span>
+          EcoChamber<span className="brand-dot">.</span>
         </a>
         <div className="workspace-label">YOUR WORKSPACE</div>
         <nav aria-label="Main navigation">
@@ -781,7 +786,7 @@ export default function App() {
                     <button
                       className="button primary full-width"
                       disabled={pending}
-                      onClick={() => void run(() => window.sortly.done())}
+                      onClick={() => void run(() => window.ecochamber.done())}
                     >
                       <CheckCircle2 size={18} />
                       Done — item deposited
@@ -792,7 +797,7 @@ export default function App() {
                       <button
                         className="button light full-width"
                         disabled={pending}
-                        onClick={() => void run(() => window.sortly.reset())}
+                        onClick={() => void run(() => window.ecochamber.reset())}
                       >
                         <RotateCcw size={16} />
                         Rescan item
@@ -804,7 +809,7 @@ export default function App() {
                             key={category}
                             disabled={pending}
                             aria-label={`Override to ${labels[category]}`}
-                            onClick={() => void run(() => window.sortly.override(category))}
+                            onClick={() => void run(() => window.ecochamber.override(category))}
                           >
                             <BinIcon category={category} size={17} />
                             {labels[category]}
@@ -819,7 +824,7 @@ export default function App() {
                       disabled={pending}
                       onClick={() =>
                         void run(() =>
-                          state.connected ? window.sortly.reset() : window.sortly.connect(),
+                          state.connected ? window.ecochamber.reset() : window.ecochamber.connect(),
                         )
                       }
                     >
@@ -835,7 +840,7 @@ export default function App() {
                     <button
                       className="button primary full-width"
                       disabled={pending}
-                      onClick={() => void run(() => window.sortly.connect())}
+                      onClick={() => void run(() => window.ecochamber.connect())}
                     >
                       <RotateCcw size={17} />
                       {hardware ? 'Connect Arduino' : 'Connect simulator'}
@@ -853,7 +858,7 @@ export default function App() {
                     <button
                       className="text-button"
                       onClick={() => {
-                        void window.sortly
+                        void window.ecochamber
                           .reset()
                           .then(() => {
                             ++operation.current;
@@ -895,7 +900,7 @@ export default function App() {
                   disabled={busy || pending}
                   value={state.scenario}
                   onChange={(event) =>
-                    void run(() => window.sortly.configure(event.target.value as Scenario))
+                    void run(() => window.ecochamber.configure(event.target.value as Scenario))
                   }
                 >
                   {scenarios.map((scenario) => (

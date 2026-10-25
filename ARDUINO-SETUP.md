@@ -10,12 +10,12 @@
 
 The supplied continuous-sweep sketch is preserved in `firmware/original_sweep/original_sweep.ino`. It does not read serial commands and cannot be used with the app. Uploading that original sketch restores automatic sweeping immediately.
 
-The replacement `firmware/sortly/sortly.ino` starts idle: it does not attach the servo or send movement pulses during boot or handshake. The app does not automatically reconnect Arduino mode on startup. Connecting opens USB and checks the firmware; it does not request movement. Opening USB can reset an Uno, so use the Sortly firmware rather than the old sweep sketch.
+The replacement `firmware/ecochamber/ecochamber.ino` starts idle: it does not attach the servo or send movement pulses during boot or handshake. The app does not automatically reconnect Arduino mode on startup. Connecting opens USB and checks the firmware; it does not request movement. Opening USB can reset an Uno, so use the EcoChamber firmware rather than the old sweep sketch.
 
 ## First-time setup and calibration
 
 1. Close Arduino Serial Monitor and any other program using COM5. Keep the USB data cable connected.
-2. Open Sortly and choose **Setup → Mechanism mode → Arduino USB**. Select **COM5** and click **Save settings** on the left. This disconnects the simulator.
+2. Open EcoChamber and choose **Setup → Mechanism mode → Arduino USB**. Select **COM5** and click **Save settings** on the left. This disconnects the simulator.
 3. Click **Connect Arduino**. A successful handshake displays **Connected · D5 positional servo**. A busy port, missing cable, or incompatible sketch produces an error instead of enabling motion.
 4. The initial trash/paper/plastic angles (20°/90°/160°) are **uncalibrated placeholders**. Adjust one saved angle toward the position you want to inspect. Save settings before testing.
 5. With the mechanism clear, click **Test Trash**, **Test Paper**, or **Test Plastic**. Each button commands only that saved position. Tests do not count as deposits and never start an automatic sweep. The first position command after a board reset moves directly toward its target and waits 3.1 seconds; subsequent commands step by one degree every 15 ms, then settle for 400 ms.
@@ -27,14 +27,14 @@ Until calibration is confirmed, hardware scans remain disabled. Position tests r
 
 ## Firmware build/upload
 
-Use Arduino IDE with **Arduino Uno** and **COM5** selected. Install the **Servo** library and **ArduinoJson 6.21.5**, then upload `firmware/sortly/sortly.ino`.
+Use Arduino IDE with **Arduino Uno** and **COM5** selected. Install the **Servo** library and **ArduinoJson 6.21.5**, then upload `firmware/ecochamber/ecochamber.ino`.
 
 Equivalent Arduino CLI commands:
 
 ```powershell
 arduino-cli lib install Servo ArduinoJson@6.21.5
-arduino-cli compile --fqbn arduino:avr:uno firmware/sortly
-arduino-cli upload --fqbn arduino:avr:uno --port COM5 firmware/sortly
+arduino-cli compile --fqbn arduino:avr:uno firmware/ecochamber
+arduino-cli upload --fqbn arduino:avr:uno --port COM5 firmware/ecochamber
 ```
 
 The integration run used the CLI bundled with the installed Arduino IDE. Firmware libraries were installed into a task-local sketchbook; normal IDE users should install them through Library Manager or the commands above.
@@ -79,11 +79,11 @@ Routine tests run without hardware and use an injected fake serial transport. Th
 An optional real-device test sends **hello only**:
 
 ```powershell
-$env:SORTLY_HARDWARE_TEST = '1'
+$env:ECOCHAMBER_HARDWARE_TEST = '1'
 npm run test:e2e -- --grep 'real COM5 handshake'
-Remove-Item Env:\SORTLY_HARDWARE_TEST
+Remove-Item Env:\ECOCHAMBER_HARDWARE_TEST
 ```
 
-For packaged verification, set `SORTLY_EXECUTABLE` to `release/win-unpacked/Sortly.exe` and invoke `npm exec -- playwright test --grep 'real COM5 handshake'` with the same explicit hardware opt-in. Close all other connections to COM5 first.
+For packaged verification, set `ECOCHAMBER_EXECUTABLE` to `release/win-unpacked/EcoChamber.exe` and invoke `npm exec -- playwright test --grep 'real COM5 handshake'` with the same explicit hardware opt-in. Close all other connections to COM5 first.
 
 Physical bin-angle calibration and repeated alignment tests must be completed by the team before a live sorting demonstration.

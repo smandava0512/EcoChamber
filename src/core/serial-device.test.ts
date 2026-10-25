@@ -119,7 +119,7 @@ describe('Arduino protocol', () => {
   it('times out incompatible firmware without issuing any move', async () => {
     const { device, transport } = fixture(20);
     transport.hello = false;
-    await expect(device.connect()).rejects.toThrow('compatible Sortly firmware');
+    await expect(device.connect()).rejects.toThrow('compatible EcoChamber firmware');
     expect(transport.writes.map((message) => message.type)).toEqual(['hello']);
   });
   it('rejects simultaneous movement commands and never retries movement', async () => {

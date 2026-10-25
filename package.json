@@ -1,5 +1,5 @@
 {
-  "name": "sortly",
+  "name": "ecochamber",
   "version": "0.2.0",
   "private": true,
   "description": "Webcam waste sorter with Gemini classification and Arduino USB control",
@@ -40,8 +40,8 @@
     "vitest": "^4.1.12"
   },
   "build": {
-    "appId": "com.gatorhacks.sortly",
-    "productName": "Sortly",
+    "appId": "com.gatorhacks.ecochamber",
+    "productName": "EcoChamber",
     "directories": {
       "output": "release"
     },
@@ -56,7 +56,7 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "Sortly-${version}-Windows.${ext}"
+      "artifactName": "EcoChamber-${version}-Windows.${ext}"
     }
   }
 }

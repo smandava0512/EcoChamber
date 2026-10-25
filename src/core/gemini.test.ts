@@ -98,17 +98,15 @@ it('requests low thinking effort for Gemini 3 without changing the model', async
 });
 
 it('restricts the requested schema to three bins and routes uncertainty to trash', async () => {
-  const generate = vi
-    .fn<Generate>()
-    .mockResolvedValue(
-      response(
-        JSON.stringify({
-          category: 'unknown',
-          itemName: 'Unclear object',
-          reason: 'Please rescan.',
-        }),
-      ),
-    );
+  const generate = vi.fn<Generate>().mockResolvedValue(
+    response(
+      JSON.stringify({
+        category: 'unknown',
+        itemName: 'Unclear object',
+        reason: 'Please rescan.',
+      }),
+    ),
+  );
   const result = await new GeminiClassifier('key', 'model', generate).classify(image);
   expect(result).toMatchObject({ category: 'trash', reason: expect.stringContaining('fallback') });
   expect(result.reason).not.toMatch(/rescan/i);

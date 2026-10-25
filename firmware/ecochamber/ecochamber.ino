@@ -1,4 +1,4 @@
-// Sortly protocol 1. Arduino Uno, positional servo signal on D5.
+// EcoChamber protocol 1. Arduino Uno, positional servo signal on D5.
 // Libraries: Servo and ArduinoJson 6.21.5. Baud: 115200.
 // No servo pulses are sent at boot or on a hello command.
 #include <Servo.h>

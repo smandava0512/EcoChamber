@@ -2,12 +2,12 @@
 
 ## Implementation
 
-- Sortly 0.2.0 adds independent simulated/Arduino mechanism selection, COM port enumeration, explicit connection, saved bin angles, individual position tests, and calibration confirmation.
+- EcoChamber 0.2.0 adds independent simulated/Arduino mechanism selection, COM port enumeration, explicit connection, saved bin angles, individual position tests, and calibration confirmation.
 - The main process uses `serialport`; native bindings are included in the Windows package.
 - The adapter validates protocol 1, servo signal pin D5, request IDs, acknowledgement/completion order, category, and angle. It handles fragmented data, wrong IDs, invalid replies, timeouts, unplug, board restart, and late failures from old connections. Movement is never automatically replayed.
 - Hardware scans remain disabled until the operator confirms calibration. Changes to angles, port, or mechanism clear confirmation and displayed position. Hardware does not auto-connect on app startup.
 - Arduino completion is timed, not sensor-verified. Manual confirmation still records deposits.
-- The original supplied ELEGOO D5 sweep sketch is preserved in `firmware/original_sweep/`. The replacement `firmware/sortly/` sketch starts idle and waits for app commands.
+- The original supplied ELEGOO D5 sweep sketch is preserved in `firmware/original_sweep/`. The replacement `firmware/ecochamber/` sketch starts idle and waits for app commands.
 
 ## Actual device work completed
 
@@ -28,7 +28,7 @@
 - Dependency install audit reported zero vulnerabilities.
 - Git diff whitespace check: passed.
 
-The optional hardware test requires `SORTLY_HARDWARE_TEST=1`. Routine tests skip it and do not require a connected Arduino. Gemini end-to-end tests use mocked API responses; no live API requests were made for this hardware integration.
+The optional hardware test requires `ECOCHAMBER_HARDWARE_TEST=1`. Routine tests skip it and do not require a connected Arduino. Gemini end-to-end tests use mocked API responses; no live API requests were made for this hardware integration.
 
 ## Remaining physical validation
 

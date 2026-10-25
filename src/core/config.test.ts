@@ -9,7 +9,7 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 function directory() {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'sortly-config-'));
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'ecochamber-config-'));
   dirs.push(dir);
   writeFileSync(path.join(dir, '.env'), 'GEMINI_API_KEY=file-key\nGEMINI_MODEL=file-model');
   return dir;
@@ -20,7 +20,7 @@ describe('main process configuration', () => {
     vi.stubEnv('GEMINI_MODEL', undefined);
     vi.stubEnv('PORTABLE_EXECUTABLE_DIR', undefined);
     const dir = directory();
-    expect(loadGeminiConfig(packaged, path.join(dir, 'Sortly.exe'), dir)).toEqual({
+    expect(loadGeminiConfig(packaged, path.join(dir, 'EcoChamber.exe'), dir)).toEqual({
       apiKey: 'file-key',
       model: 'file-model',
     });
@@ -32,7 +32,7 @@ describe('main process configuration', () => {
     vi.stubEnv('PORTABLE_EXECUTABLE_DIR', dir);
     vi.stubEnv('GEMINI_API_KEY', 'inherited');
     vi.stubEnv('GEMINI_MODEL', '');
-    expect(loadGeminiConfig(true, '/unused/Sortly.exe', '/archive')).toEqual({
+    expect(loadGeminiConfig(true, '/unused/EcoChamber.exe', '/archive')).toEqual({
       apiKey: 'inherited',
       model: 'gemini-3.8-flash',
     });
